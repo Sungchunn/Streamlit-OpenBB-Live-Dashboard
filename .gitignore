@@ -91,4 +91,7 @@ venv.bak/
 
 # Temporary files
 temp/
-tmp/
+tmp/CLAUDE.md
+CLAUDE.md
+claude.md
+.claude/
