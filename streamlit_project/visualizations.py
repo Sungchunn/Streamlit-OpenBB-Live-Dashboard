@@ -605,6 +605,220 @@ class ChartGenerator:
 
         return fig
 
+    def _align_close_data(self, data_map: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+        """Align close price data from multiple symbols by date intersection"""
+        close_data = {}
+
+        for symbol, df in data_map.items():
+            if df is not None and not df.empty and 'close' in df.columns:
+                close_data[symbol] = df['close'].copy()
+
+        if not close_data:
+            return pd.DataFrame()
+
+        # Combine all series and find intersection
+        aligned_data = pd.concat(close_data, axis=1)
+        aligned_data = aligned_data.dropna()  # Keep only common dates
+
+        return aligned_data
+
+    def create_rebased_price_chart(self, data_map: Dict[str, pd.DataFrame]) -> go.Figure:
+        """Create rebased price comparison chart (index=100)"""
+        closes = self._align_close_data(data_map)
+        fig = go.Figure()
+
+        if closes.empty:
+            return fig.add_annotation(text="No comparable data available", showarrow=False)
+
+        # Rebase to 100 at first date
+        rebased = closes.apply(lambda series: (series / series.iloc[0]) * 100.0)
+
+        # Add trace for each symbol
+        colors = [self.color_palette['primary'], self.color_palette['secondary'],
+                 self.color_palette['success'], self.color_palette['warning'],
+                 self.color_palette['danger'], self.color_palette['info']]
+
+        for i, symbol in enumerate(rebased.columns):
+            fig.add_trace(go.Scatter(
+                x=rebased.index,
+                y=rebased[symbol],
+                mode='lines',
+                name=symbol,
+                line=dict(color=colors[i % len(colors)], width=2)
+            ))
+
+        fig.update_layout(
+            title="Rebased Price Comparison (Index = 100)",
+            xaxis_title="Date",
+            yaxis_title="Rebased Price",
+            template='plotly_white',
+            height=520,
+            xaxis_rangeslider_visible=False,
+            hovermode='x unified'
+        )
+
+        return fig
+
+    def create_returns_chart(self, data_map: Dict[str, pd.DataFrame], mode: str = "cumulative") -> go.Figure:
+        """Create returns comparison chart (daily or cumulative)"""
+        closes = self._align_close_data(data_map)
+        fig = go.Figure()
+
+        if closes.empty:
+            return fig.add_annotation(text="No comparable data available", showarrow=False)
+
+        # Calculate returns
+        returns = closes.pct_change().dropna()
+
+        colors = [self.color_palette['primary'], self.color_palette['secondary'],
+                 self.color_palette['success'], self.color_palette['warning'],
+                 self.color_palette['danger'], self.color_palette['info']]
+
+        if mode == "cumulative":
+            # Cumulative returns starting from 100
+            cumulative_returns = (1 + returns).cumprod() * 100.0
+
+            for i, symbol in enumerate(cumulative_returns.columns):
+                fig.add_trace(go.Scatter(
+                    x=cumulative_returns.index,
+                    y=cumulative_returns[symbol],
+                    mode='lines',
+                    name=symbol,
+                    line=dict(color=colors[i % len(colors)], width=2)
+                ))
+
+            fig.update_layout(
+                title="Cumulative Returns (Base = 100)",
+                yaxis_title="Cumulative Return"
+            )
+        else:
+            # Daily returns as percentage
+            for i, symbol in enumerate(returns.columns):
+                fig.add_trace(go.Scatter(
+                    x=returns.index,
+                    y=returns[symbol] * 100.0,
+                    mode='lines',
+                    name=symbol,
+                    line=dict(color=colors[i % len(colors)], width=1)
+                ))
+
+            fig.update_layout(
+                title="Daily Returns (%)",
+                yaxis_title="Daily Return (%)"
+            )
+
+        fig.update_layout(
+            xaxis_title="Date",
+            template='plotly_white',
+            height=520,
+            xaxis_rangeslider_visible=False,
+            hovermode='x unified'
+        )
+
+        return fig
+
+    def create_correlation_heatmap(self, data_map: Dict[str, pd.DataFrame]) -> go.Figure:
+        """Create correlation heatmap for returns"""
+        closes = self._align_close_data(data_map)
+        fig = go.Figure()
+
+        if closes.empty or closes.shape[1] < 2:
+            return fig.add_annotation(text="Need at least two symbols for correlation analysis", showarrow=False)
+
+        # Calculate correlation matrix of returns
+        returns = closes.pct_change().dropna()
+        correlation_matrix = returns.corr()
+
+        # Create heatmap
+        fig = go.Figure(data=go.Heatmap(
+            z=correlation_matrix.values,
+            x=correlation_matrix.columns,
+            y=correlation_matrix.index,
+            zmin=-1,
+            zmax=1,
+            colorscale='RdBu',
+            colorbar=dict(title="Correlation"),
+            text=np.round(correlation_matrix.values, 2),
+            texttemplate="%{text}",
+            textfont={"size": 12},
+            hoverongaps=False
+        ))
+
+        fig.update_layout(
+            title="Return Correlation Matrix",
+            template='plotly_white',
+            height=520,
+            width=520
+        )
+
+        return fig
+
+    def create_small_multiples(self, data_map: Dict[str, pd.DataFrame]) -> List[go.Figure]:
+        """Create small multiple charts for each symbol with price + SMAs"""
+        figures = []
+
+        for symbol, df in data_map.items():
+            if df is None or df.empty or 'close' not in df.columns:
+                continue
+
+            # Calculate SMAs
+            df_copy = df.copy()
+            df_copy['SMA20'] = df_copy['close'].rolling(window=20).mean()
+            df_copy['SMA50'] = df_copy['close'].rolling(window=50).mean()
+
+            # Create individual chart
+            fig = go.Figure()
+
+            # Price line
+            fig.add_trace(go.Scatter(
+                x=df_copy.index,
+                y=df_copy['close'],
+                mode='lines',
+                name=f'{symbol} Price',
+                line=dict(color=self.color_palette['primary'], width=2)
+            ))
+
+            # SMA 20
+            if not df_copy['SMA20'].isna().all():
+                fig.add_trace(go.Scatter(
+                    x=df_copy.index,
+                    y=df_copy['SMA20'],
+                    mode='lines',
+                    name='SMA 20',
+                    line=dict(color=self.color_palette['secondary'], width=1)
+                ))
+
+            # SMA 50
+            if not df_copy['SMA50'].isna().all():
+                fig.add_trace(go.Scatter(
+                    x=df_copy.index,
+                    y=df_copy['SMA50'],
+                    mode='lines',
+                    name='SMA 50',
+                    line=dict(color=self.color_palette['success'], width=1)
+                ))
+
+            fig.update_layout(
+                title=f'{symbol}',
+                xaxis_title="Date",
+                yaxis_title="Price ($)",
+                template='plotly_white',
+                height=300,
+                xaxis_rangeslider_visible=False,
+                showlegend=True,
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                )
+            )
+
+            figures.append(fig)
+
+        return figures
+
     def create_metrics_display(self, company_info: Optional[Dict[str, Any]], ratios: Optional[pd.DataFrame]) -> None:
         """
         Display key financial metrics in Streamlit

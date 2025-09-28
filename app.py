@@ -74,6 +74,12 @@ def main():
     # Initialize components
     data_fetcher, chart_generator = initialize_components()
 
+    # Fast-fail guard to catch stale imports/paths
+    assert hasattr(data_fetcher, "get_many_price_data"), (
+        "get_many_price_data is missing on FinancialDataFetcher. "
+        "Did you update streamlit_project/data_fetcher.py and restart the app?"
+    )
+
     # Check if OpenBB is available
     if not data_fetcher.obb_available:
         st.error("❌ OpenBB Platform is not available. Please install it using: `pip install openbb`")
@@ -89,6 +95,20 @@ def main():
         value="AAPL",
         help="Enter a valid stock ticker symbol (e.g., AAPL, GOOGL, MSFT)"
     ).upper()
+
+    # Multi-symbol comparison (moved up)
+    st.sidebar.subheader("📈 Multi-Symbol Comparison")
+    compare_symbols_input = st.sidebar.text_input(
+        "Additional symbols to compare",
+        placeholder="e.g., GOOGL, MSFT, TSLA",
+        help="Enter comma-separated ticker symbols to compare with the primary symbol."
+    )
+
+    # Parse the input into a list
+    if compare_symbols_input:
+        compare_symbols = [s.strip().upper() for s in compare_symbols_input.split(",") if s.strip()]
+    else:
+        compare_symbols = []
 
     # Time period selection
     period_options = {
@@ -121,7 +141,6 @@ def main():
     show_volume = st.sidebar.checkbox("Show Volume Chart", value=True)
     show_technicals = st.sidebar.checkbox("Show Technical Analysis", value=True)
     show_metrics = st.sidebar.checkbox("Show Company Metrics", value=True)
-    show_news = st.sidebar.checkbox("Show Latest News", value=False)
 
     st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
@@ -162,101 +181,163 @@ def main():
                 st.error(f"❌ No price data found for symbol: {symbol}")
                 st.stop()
 
-            # Display price chart
+            # Fetch additional data needed for tabs
             progress_bar.progress(40)
-            status_text.text("📊 Creating price chart...")
-            price_chart = chart_generator.create_price_chart(price_data, symbol, chart_type)
-            st.plotly_chart(price_chart, use_container_width=True)
+            status_text.text("📊 Preparing data...")
 
-            # Volume chart
-            if show_volume:
-                progress_bar.progress(50)
-                status_text.text("📊 Creating volume chart...")
-                volume_chart = chart_generator.create_volume_chart(price_data, symbol)
-                st.plotly_chart(volume_chart, use_container_width=True)
+            # Get technical indicators if needed
+            indicators = None
+            if show_technicals and (compute_button or any(indicator_config.get_active_indicators().values())):
+                status_text.text("🔍 Calculating technical indicators...")
+                indicators = data_fetcher.get_technical_indicators(symbol, period, indicator_config)
 
-            # Create columns for metrics and additional info
-            col1, col2 = st.columns([2, 1])
+            # Get company info and ratios if needed
+            company_info = None
+            ratios = None
+            if show_metrics:
+                status_text.text("📈 Fetching company metrics...")
+                company_info = data_fetcher.get_company_info(symbol)
+                ratios = data_fetcher.get_financial_ratios(symbol)
 
-            with col1:
-                # Enhanced Technical analysis with configurable indicators
-                if show_technicals and (compute_button or any(indicator_config.get_active_indicators().values())):
-                    progress_bar.progress(60)
-                    status_text.text("🔍 Calculating technical indicators...")
+            progress_bar.progress(80)
+            status_text.text("📋 Organizing data...")
 
-                    # Use enhanced indicators with configuration
-                    indicators = data_fetcher.get_technical_indicators(symbol, period, indicator_config)
+            # Create tab navigation
+            tabs = st.tabs(["📊 Overview", "📈 Volume", "🔧 Technicals", "📋 Fundamentals", "🔀 Compare"])
 
-                    if indicators:
-                        # Create enhanced technical chart
-                        technical_chart = chart_generator.create_technical_indicators_chart(
-                            price_data, indicators, symbol, indicator_config
+            # Overview Tab
+            with tabs[0]:
+                # Display price chart
+                price_chart = chart_generator.create_price_chart(price_data, symbol, chart_type)
+                st.plotly_chart(price_chart, use_container_width=True)
+
+                # Key metrics
+                st.subheader("📋 Key Metrics")
+                if not price_data.empty:
+                    col1, col2, col3, col4 = st.columns(4)
+
+                    latest_price = price_data['close'].iloc[-1] if 'close' in price_data.columns else price_data.iloc[-1, 0]
+                    price_change = ((latest_price - price_data['close'].iloc[0]) / price_data['close'].iloc[0] * 100) if 'close' in price_data.columns and len(price_data) > 1 else 0
+
+                    with col1:
+                        st.metric(
+                            "Latest Price",
+                            f"${latest_price:.2f}",
+                            f"{price_change:+.2f}%"
                         )
-                        st.plotly_chart(technical_chart, use_container_width=True)
 
-                        # Volume profile chart if enabled
-                        if 'volume_profile' in indicators:
-                            volume_profile_chart = chart_generator.create_volume_profile_chart(
-                                indicators['volume_profile'], symbol
-                            )
-                            st.plotly_chart(volume_profile_chart, use_container_width=True)
-                    else:
-                        st.info("📊 No technical indicators computed. Select indicators from the sidebar.")
+                    with col2:
+                        high_price = price_data['high'].max() if 'high' in price_data.columns else price_data.max().max()
+                        st.metric("Period High", f"${high_price:.2f}")
+
+                    with col3:
+                        low_price = price_data['low'].min() if 'low' in price_data.columns else price_data.min().min()
+                        st.metric("Period Low", f"${low_price:.2f}")
+
+                    with col4:
+                        avg_volume = price_data['volume'].mean() if 'volume' in price_data.columns else 0
+                        volume_str = f"{avg_volume/1e6:.1f}M" if avg_volume > 1e6 else f"{avg_volume/1e3:.1f}K"
+                        st.metric("Avg Volume", volume_str)
+
+                # Raw data expander
+                with st.expander("📊 View Raw Data"):
+                    st.dataframe(price_data.tail(100), use_container_width=True)
+
+            # Volume Tab
+            with tabs[1]:
+                if show_volume:
+                    volume_chart = chart_generator.create_volume_chart(price_data, symbol)
+                    st.plotly_chart(volume_chart, use_container_width=True)
+                else:
+                    st.info("📊 Enable 'Show Volume Chart' in the sidebar to view volume data.")
+
+            # Technicals Tab
+            with tabs[2]:
+                if show_technicals and indicators:
+                    technical_chart = chart_generator.create_technical_indicators_chart(
+                        price_data, indicators, symbol, indicator_config
+                    )
+                    st.plotly_chart(technical_chart, use_container_width=True)
+
+                    # Volume profile chart if enabled
+                    if 'volume_profile' in indicators:
+                        volume_profile_chart = chart_generator.create_volume_profile_chart(
+                            indicators['volume_profile'], symbol
+                        )
+                        st.plotly_chart(volume_profile_chart, use_container_width=True)
                 elif show_technicals:
                     st.info("📊 Select technical indicators from the sidebar and click 'Compute'")
+                else:
+                    st.info("📊 Enable 'Show Technical Analysis' in the sidebar to view indicators.")
 
-            with col2:
-                # Company metrics
+            # Fundamentals Tab
+            with tabs[3]:
                 if show_metrics:
-                    progress_bar.progress(70)
-                    status_text.text("📈 Fetching company metrics...")
-                    company_info = data_fetcher.get_company_info(symbol)
-                    ratios = data_fetcher.get_financial_ratios(symbol)
                     chart_generator.create_metrics_display(company_info, ratios)
+                else:
+                    st.info("📊 Enable 'Show Company Metrics' in the sidebar to view fundamentals.")
 
-                # News section
-                if show_news:
-                    progress_bar.progress(75)
-                    status_text.text("📰 Fetching latest news...")
-                    news_data = data_fetcher.get_market_news(symbol, limit=5)
-                    chart_generator.create_news_display(news_data)
+            # Compare Tab
+            with tabs[4]:
+                st.subheader("📈 Multi-Symbol Comparison")
 
-            # Data summary
-            progress_bar.progress(80)
-            status_text.text("📋 Preparing data summary...")
+                # Combine primary symbol with comparison symbols
+                all_symbols = [symbol] + [s.upper().strip() for s in compare_symbols if isinstance(s, str) and s.strip()]
 
-            st.subheader("📋 Data Summary")
+                if len(all_symbols) <= 1:
+                    st.info("💡 Add more symbols in the sidebar 'Multi-Symbol Comparison' section to compare.")
+                    st.markdown("**Example symbols to try:** AAPL, GOOGL, MSFT, TSLA, SPY, QQQ")
+                else:
+                    # Fetch data for all symbols
+                    with st.spinner(f"📊 Loading data for {len(all_symbols)} symbols..."):
+                        comparison_data = data_fetcher.get_many_price_data(all_symbols, period)
 
-            # Display basic statistics
-            if not price_data.empty:
-                col1, col2, col3, col4 = st.columns(4)
+                    if len(comparison_data) >= 2:
+                        # Comparison mode selection
+                        comparison_mode = st.radio(
+                            "Compare mode",
+                            ["Rebased Price (index=100)", "Returns", "Correlation"],
+                            horizontal=True,
+                            key="comparison_mode"
+                        )
 
-                latest_price = price_data['close'].iloc[-1] if 'close' in price_data.columns else price_data.iloc[-1, 0]
-                price_change = ((latest_price - price_data['close'].iloc[0]) / price_data['close'].iloc[0] * 100) if 'close' in price_data.columns and len(price_data) > 1 else 0
+                        if comparison_mode == "Rebased Price (index=100)":
+                            rebased_chart = chart_generator.create_rebased_price_chart(comparison_data)
+                            st.plotly_chart(rebased_chart, use_container_width=True)
 
-                with col1:
-                    st.metric(
-                        "Latest Price",
-                        f"${latest_price:.2f}",
-                        f"{price_change:+.2f}%"
-                    )
+                        elif comparison_mode == "Returns":
+                            returns_mode = st.selectbox(
+                                "Returns aggregation",
+                                ["Daily", "Cumulative"],
+                                index=1,
+                                key="returns_mode"
+                            )
+                            returns_chart = chart_generator.create_returns_chart(
+                                comparison_data,
+                                mode="cumulative" if returns_mode == "Cumulative" else "daily"
+                            )
+                            st.plotly_chart(returns_chart, use_container_width=True)
 
-                with col2:
-                    high_price = price_data['high'].max() if 'high' in price_data.columns else price_data.max().max()
-                    st.metric("Period High", f"${high_price:.2f}")
+                        else:  # Correlation
+                            correlation_chart = chart_generator.create_correlation_heatmap(comparison_data)
+                            st.plotly_chart(correlation_chart, use_container_width=True)
 
-                with col3:
-                    low_price = price_data['low'].min() if 'low' in price_data.columns else price_data.min().min()
-                    st.metric("Period Low", f"${low_price:.2f}")
+                        # Small multiples
+                        with st.expander("📊 Small Multiples (Price + SMA20/50)"):
+                            if st.checkbox("Show small multiples", key="show_small_multiples"):
+                                small_multiple_charts = chart_generator.create_small_multiples(comparison_data)
 
-                with col4:
-                    avg_volume = price_data['volume'].mean() if 'volume' in price_data.columns else 0
-                    volume_str = f"{avg_volume/1e6:.1f}M" if avg_volume > 1e6 else f"{avg_volume/1e3:.1f}K"
-                    st.metric("Avg Volume", volume_str)
+                                if small_multiple_charts:
+                                    # Create responsive columns
+                                    num_charts = len(small_multiple_charts)
+                                    cols_per_row = min(4, max(2, num_charts))
+                                    columns = st.columns(cols_per_row)
 
-            # Raw data expander
-            with st.expander("📊 View Raw Data"):
-                st.dataframe(price_data.tail(100), use_container_width=True)
+                                    for i, chart in enumerate(small_multiple_charts):
+                                        with columns[i % cols_per_row]:
+                                            st.plotly_chart(chart, use_container_width=True)
+                    else:
+                        st.warning("⚠️ Could not load sufficient data for comparison. Check symbol validity.")
 
             # Clear progress bar and status
             progress_bar.progress(100)
@@ -278,7 +359,7 @@ def main():
     st.markdown(
         """
         <div style='text-align: center; color: #666; font-size: 0.8rem;'>
-            📈 OpenBB Financial Dashboard | Enhanced Technical Indicators |
+            📈 OpenBB Financial Dashboard | Technical Indicators & Multi-Symbol Comparison |
             Powered by OpenBB Platform & Streamlit | Data via Yahoo Finance
         </div>
         """,

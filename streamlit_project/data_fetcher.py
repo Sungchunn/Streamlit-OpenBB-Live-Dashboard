@@ -532,6 +532,30 @@ class FinancialDataFetcher:
         except:
             return None
 
+    def get_many_price_data(self, symbols: List[str], period: str = "1y") -> Dict[str, pd.DataFrame]:
+        """
+        Fetch price data for multiple symbols efficiently.
+        Uses an inner cached function to avoid caching the bound method (self).
+        """
+        # Normalize to uppercase & tuple for the cache key
+        symbols_tuple = tuple(sorted({s.upper() for s in symbols if isinstance(s, str) and s.strip()}))
+
+        @st.cache_data(ttl=300)
+        def _load_many(symbols_key: Tuple[str, ...], period_key: str) -> Dict[str, pd.DataFrame]:
+            results: Dict[str, pd.DataFrame] = {}
+            for sym in symbols_key:
+                try:
+                    df = self.get_stock_price_data(sym, period_key)
+                    if df is not None and not df.empty:
+                        results[sym] = df
+                    else:
+                        st.warning(f"No data available for {sym}")
+                except Exception as e:
+                    st.warning(f"Failed to load data for {sym}: {e}")
+            return results
+
+        return _load_many(symbols_tuple, period)
+
     @st.cache_data(ttl=1800)  # Cache for 30 minutes
     def get_market_news(_self, symbol: str, limit: int = 10) -> Optional[pd.DataFrame]:
         """
