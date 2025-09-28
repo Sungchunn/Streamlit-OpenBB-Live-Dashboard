@@ -17,6 +17,7 @@ try:
         create_performance_info,
         handle_indicator_errors
     )
+    from streamlit_project.ticker_catalog import load_ticker_catalog, format_label
 except Exception as e:
     st.set_page_config(page_title="OpenBB Financial Dashboard", layout="wide")
     st.error(f"Failed to import project modules: {e}\n"
@@ -89,26 +90,73 @@ def main():
     st.sidebar.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
     st.sidebar.header("🎛️ Dashboard Controls")
 
-    # Stock symbol input
-    symbol = st.sidebar.text_input(
-        "Enter Stock Symbol",
-        value="AAPL",
-        help="Enter a valid stock ticker symbol (e.g., AAPL, GOOGL, MSFT)"
-    ).upper()
-
-    # Multi-symbol comparison (moved up)
-    st.sidebar.subheader("📈 Multi-Symbol Comparison")
-    compare_symbols_input = st.sidebar.text_input(
-        "Additional symbols to compare",
-        placeholder="e.g., GOOGL, MSFT, TSLA",
-        help="Enter comma-separated ticker symbols to compare with the primary symbol."
+    # Market selector
+    st.sidebar.subheader("🌍 Market")
+    market = st.sidebar.selectbox(
+        "Select Market",
+        options=["US", "EU", "HK", "TH"],
+        index=0,
+        help="Choose which market's ticker catalog to search."
     )
 
-    # Parse the input into a list
-    if compare_symbols_input:
-        compare_symbols = [s.strip().upper() for s in compare_symbols_input.split(",") if s.strip()]
-    else:
-        compare_symbols = []
+    # Load ticker catalog
+    with st.sidebar.status("Loading ticker catalog...", expanded=False) as status:
+        catalog = load_ticker_catalog(market)
+        status.update(label=f"Loaded {len(catalog):,} tickers from {market}", state="complete", expanded=False)
+
+    # Build label map for nice display
+    catalog = catalog.dropna(subset=["symbol"]).copy()
+    catalog["label"] = catalog.apply(format_label, axis=1)
+    label_by_symbol = dict(zip(catalog["symbol"], catalog["label"]))
+    symbol_by_label = dict(zip(catalog["label"], catalog["symbol"]))
+    labels_sorted = sorted(catalog["label"].tolist())
+
+    # Primary symbol selector
+    st.sidebar.subheader("🎯 Primary Symbol")
+    # Default to AAPL or first available
+    default_symbol = "AAPL"
+    default_label = label_by_symbol.get(default_symbol, labels_sorted[0] if labels_sorted else "AAPL")
+
+    primary_label = st.sidebar.selectbox(
+        "Primary Stock Symbol",
+        options=labels_sorted,
+        index=labels_sorted.index(default_label) if default_label in labels_sorted else 0,
+        help="Search by symbol or company name, scroll to browse."
+    )
+    symbol = symbol_by_label.get(primary_label, default_symbol)
+
+    # Multi-symbol comparison
+    st.sidebar.subheader("📈 Additional Symbols to Compare")
+    compare_labels = st.sidebar.multiselect(
+        "Search & select additional symbols",
+        options=labels_sorted,
+        default=[],
+        help="Type to search, scroll to browse, select multiple."
+    )
+
+    # Optional: add a custom ticker not in catalog
+    with st.sidebar.expander("Add custom ticker (not in catalog)"):
+        custom_ticker = st.text_input("Custom symbol", placeholder="e.g., NVDA", key="custom_ticker_input")
+        if st.button("Add Custom Ticker", key="add_custom"):
+            if custom_ticker:
+                # Accept even if it's not in the catalog; uppercase normalize
+                ct = custom_ticker.strip().upper()
+                # Show a tiny preview tag for user feedback
+                st.success(f"Added {ct}. It will be included in comparison.")
+                # Store in session for later merge
+                st.session_state.setdefault("custom_compare_syms", set()).add(ct)
+
+    # Resolve compare symbols to actual tickers
+    compare_symbols = [symbol_by_label[lbl] for lbl in compare_labels]
+    compare_symbols += list(st.session_state.get("custom_compare_syms", set()))
+    # Remove primary symbol if accidentally included
+    compare_symbols = [s for s in dict.fromkeys(compare_symbols) if s != symbol]
+
+    # Clear custom symbols button
+    if st.session_state.get("custom_compare_syms"):
+        if st.sidebar.button("Clear custom symbols", key="clear_custom"):
+            st.session_state["custom_compare_syms"] = set()
+            st.rerun()
 
     # Time period selection
     period_options = {

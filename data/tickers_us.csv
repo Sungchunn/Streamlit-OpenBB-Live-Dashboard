@@ -1,0 +1,58 @@
+symbol,name,exchange
+AAPL,Apple Inc.,NASDAQ
+MSFT,Microsoft Corp.,NASDAQ
+GOOGL,Alphabet Inc. (Class A),NASDAQ
+GOOG,Alphabet Inc. (Class C),NASDAQ
+AMZN,Amazon.com Inc.,NASDAQ
+TSLA,Tesla Inc.,NASDAQ
+NVDA,NVIDIA Corp.,NASDAQ
+META,Meta Platforms Inc.,NASDAQ
+BRK.A,Berkshire Hathaway Inc. (Class A),NYSE
+BRK.B,Berkshire Hathaway Inc. (Class B),NYSE
+JPM,JPMorgan Chase & Co.,NYSE
+V,Visa Inc. (Class A),NYSE
+MA,Mastercard Inc. (Class A),NYSE
+UNH,UnitedHealth Group Inc.,NYSE
+JNJ,Johnson & Johnson,NYSE
+XOM,Exxon Mobil Corp.,NYSE
+PG,Procter & Gamble Co.,NYSE
+HD,Home Depot Inc.,NYSE
+CVX,Chevron Corp.,NYSE
+BAC,Bank of America Corp.,NYSE
+PFE,Pfizer Inc.,NYSE
+KO,Coca-Cola Co.,NYSE
+PEP,PepsiCo Inc.,NASDAQ
+TMO,Thermo Fisher Scientific Inc.,NYSE
+COST,Costco Wholesale Corp.,NASDAQ
+ABBV,AbbVie Inc.,NYSE
+MRK,Merck & Co. Inc.,NYSE
+WMT,Walmart Inc.,NYSE
+DIS,Walt Disney Co.,NYSE
+ABT,Abbott Laboratories,NYSE
+CRM,Salesforce Inc.,NYSE
+VZ,Verizon Communications Inc.,NYSE
+ADBE,Adobe Inc.,NASDAQ
+NFLX,Netflix Inc.,NASDAQ
+NKE,Nike Inc. (Class B),NYSE
+AMD,Advanced Micro Devices Inc.,NASDAQ
+INTC,Intel Corp.,NASDAQ
+COP,ConocoPhillips,NYSE
+TXN,Texas Instruments Inc.,NASDAQ
+CMCSA,Comcast Corp. (Class A),NASDAQ
+SPY,SPDR S&P 500 ETF,NYSE Arca
+QQQ,Invesco QQQ Trust,NASDAQ
+IWM,iShares Russell 2000 ETF,NYSE Arca
+VTI,Vanguard Total Stock Market ETF,NYSE Arca
+VOO,Vanguard S&P 500 ETF,NYSE Arca
+VEA,Vanguard FTSE Developed Markets ETF,NYSE Arca
+VWO,Vanguard FTSE Emerging Markets ETF,NYSE Arca
+BND,Vanguard Total Bond Market ETF,NASDAQ
+XLK,Technology Select Sector SPDR Fund,NYSE Arca
+XLF,Financial Select Sector SPDR Fund,NYSE Arca
+XLE,Energy Select Sector SPDR Fund,NYSE Arca
+XLV,Health Care Select Sector SPDR Fund,NYSE Arca
+XLI,Industrial Select Sector SPDR Fund,NYSE Arca
+XLP,Consumer Staples Select Sector SPDR Fund,NYSE Arca
+XLY,Consumer Discretionary Select Sector SPDR Fund,NYSE Arca
+GLD,SPDR Gold Shares,NYSE Arca
+SLV,iShares Silver Trust,NYSE Arca

@@ -9,3 +9,4 @@ from .indicator_ui import (
     create_performance_info,
     handle_indicator_errors
 )
+from .ticker_catalog import load_ticker_catalog, format_label
