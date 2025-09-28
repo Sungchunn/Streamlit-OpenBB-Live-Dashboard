@@ -10,6 +10,13 @@ from datetime import datetime
 try:
     from streamlit_project.data_fetcher import FinancialDataFetcher
     from streamlit_project.visualizations import ChartGenerator
+    from streamlit_project.indicator_config import IndicatorConfig
+    from streamlit_project.indicator_ui import (
+        create_indicator_sidebar,
+        display_indicator_summary,
+        create_performance_info,
+        handle_indicator_errors
+    )
 except Exception as e:
     st.set_page_config(page_title="OpenBB Financial Dashboard", layout="wide")
     st.error(f"Failed to import project modules: {e}\n"
@@ -59,7 +66,7 @@ def initialize_components():
     return data_fetcher, chart_generator
 
 def main():
-    """Main application function"""
+    """Main application function with enhanced technical indicators"""
 
     # Header
     st.markdown('<h1 class="main-header">📈 OpenBB Financial Dashboard</h1>', unsafe_allow_html=True)
@@ -114,11 +121,21 @@ def main():
     show_volume = st.sidebar.checkbox("Show Volume Chart", value=True)
     show_technicals = st.sidebar.checkbox("Show Technical Analysis", value=True)
     show_metrics = st.sidebar.checkbox("Show Company Metrics", value=True)
+    show_news = st.sidebar.checkbox("Show Latest News", value=False)
 
     st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
+    # Technical Indicators Configuration
+    indicator_config, compute_button = create_indicator_sidebar()
+
+    # Display active indicators summary
+    display_indicator_summary(indicator_config)
+
+    # Performance info
+    create_performance_info()
+
     # Add refresh button
-    if st.sidebar.button("🔄 Refresh Data", type="primary"):
+    if st.sidebar.button("🔄 Refresh Data", type="secondary"):
         st.cache_data.clear()
         st.rerun()
 
@@ -162,19 +179,31 @@ def main():
             col1, col2 = st.columns([2, 1])
 
             with col1:
-                # Technical analysis
-                if show_technicals:
+                # Enhanced Technical analysis with configurable indicators
+                if show_technicals and (compute_button or any(indicator_config.get_active_indicators().values())):
                     progress_bar.progress(60)
                     status_text.text("🔍 Calculating technical indicators...")
-                    indicators = data_fetcher.get_technical_indicators(symbol, period)
+
+                    # Use enhanced indicators with configuration
+                    indicators = data_fetcher.get_technical_indicators(symbol, period, indicator_config)
 
                     if indicators:
+                        # Create enhanced technical chart
                         technical_chart = chart_generator.create_technical_indicators_chart(
-                            price_data, indicators, symbol
+                            price_data, indicators, symbol, indicator_config
                         )
                         st.plotly_chart(technical_chart, use_container_width=True)
+
+                        # Volume profile chart if enabled
+                        if 'volume_profile' in indicators:
+                            volume_profile_chart = chart_generator.create_volume_profile_chart(
+                                indicators['volume_profile'], symbol
+                            )
+                            st.plotly_chart(volume_profile_chart, use_container_width=True)
                     else:
-                        st.info("📊 Technical indicators not available")
+                        st.info("📊 No technical indicators computed. Select indicators from the sidebar.")
+                elif show_technicals:
+                    st.info("📊 Select technical indicators from the sidebar and click 'Compute'")
 
             with col2:
                 # Company metrics
@@ -184,6 +213,13 @@ def main():
                     company_info = data_fetcher.get_company_info(symbol)
                     ratios = data_fetcher.get_financial_ratios(symbol)
                     chart_generator.create_metrics_display(company_info, ratios)
+
+                # News section
+                if show_news:
+                    progress_bar.progress(75)
+                    status_text.text("📰 Fetching latest news...")
+                    news_data = data_fetcher.get_market_news(symbol, limit=5)
+                    chart_generator.create_news_display(news_data)
 
             # Data summary
             progress_bar.progress(80)
@@ -232,8 +268,8 @@ def main():
             progress_bar.empty()
             status_text.empty()
 
-        except Exception as e:
-            st.error(f"❌ An error occurred: {str(e)}")
+        except Exception as error:
+            st.error(f"❌ An error occurred: {str(error)}")
             progress_bar.empty()
             status_text.empty()
 
@@ -242,8 +278,8 @@ def main():
     st.markdown(
         """
         <div style='text-align: center; color: #666; font-size: 0.8rem;'>
-            📈 OpenBB Financial Dashboard | Powered by OpenBB Platform & Streamlit |
-            Data provided by Yahoo Finance via OpenBB
+            📈 OpenBB Financial Dashboard | Enhanced Technical Indicators |
+            Powered by OpenBB Platform & Streamlit | Data via Yahoo Finance
         </div>
         """,
         unsafe_allow_html=True
